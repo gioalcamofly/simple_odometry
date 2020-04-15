@@ -2,6 +2,7 @@
 
 const double OdomRobot::FORWARD_SPEED = 0.5;
 const double OdomRobot::SPIN_SPEED = 0.5;
+const double OdomRobot::MAX_FORWARD = 10.0;
 
 
 OdomRobot::OdomRobot() {
@@ -13,6 +14,16 @@ OdomRobot::OdomRobot() {
     current_time = ros::Time::now();
     last_time = ros::Time::now();
 
+    forwardOrSpin = true;
+
+}
+
+void OdomRobot::odomCallback(const nav_msgs::Odometry::ConstPtr& odom) {
+
+    if ((odom->pose.pose.position.x - start_x) >= MAX_FORWARD) {
+        stopMoving();
+    }
+
 }
 
 void OdomRobot::publishForward() {
@@ -20,18 +31,21 @@ void OdomRobot::publishForward() {
     current_time = ros::Time::now();
 
     double dt = (current_time - last_time).toSec();
-    double delta_x = FORWARD_SPEED * dt;
+    double delta_x = actualSpeed * dt;
 
-    x += delta_x;
+    end_x += delta_x;
+    ROS_INFO("start_x = %lf", start_x);
+    ROS_INFO("delta_x = %lf", delta_x);
+    ROS_INFO("end_x = %lf", end_x);
 
-    geometry_msgs::Quaternion odom_quat = tf::createQuaternionMsgFromYaw(th);
+    geometry_msgs::Quaternion odom_quat = tf::createQuaternionMsgFromYaw(end_th);
 
     geometry_msgs::TransformStamped odom_trans;
     odom_trans.header.stamp = current_time;
     odom_trans.header.frame_id = "odom";
     odom_trans.child_frame_id = "base_link";
 
-    odom_trans.transform.translation.x = x;
+    odom_trans.transform.translation.x = end_x;
     odom_trans.transform.translation.y = 0.0;
     odom_trans.transform.translation.z = 0.0;
     odom_trans.transform.rotation = odom_quat;
@@ -42,7 +56,7 @@ void OdomRobot::publishForward() {
     odom.header.stamp = current_time;
     odom.header.frame_id = "odom";
 
-    odom.pose.pose.position.x = x;
+    odom.pose.pose.position.x = end_x;
     odom.pose.pose.position.y = 0.0;
     odom.pose.pose.position.z = 0.0;
     odom.pose.pose.orientation = odom_quat;
@@ -65,16 +79,16 @@ void OdomRobot::publishSpin() {
     double dt = (current_time - last_time).toSec();
     double delta_th = SPIN_SPEED * dt;
 
-    th += delta_th;
+    end_th += delta_th;
 
-    geometry_msgs::Quaternion odom_quat = tf::createQuaternionMsgFromYaw(th);
+    geometry_msgs::Quaternion odom_quat = tf::createQuaternionMsgFromYaw(end_th);
 
     geometry_msgs::TransformStamped odom_trans;
     odom_trans.header.stamp = current_time;
     odom_trans.header.frame_id = "odom";
     odom_trans.child_frame_id = "base_link";
 
-    odom_trans.transform.translation.x = x;
+    odom_trans.transform.translation.x = end_x;
     odom_trans.transform.translation.y = 0.0;
     odom_trans.transform.translation.z = 0.0;
     odom_trans.transform.rotation = odom_quat;
@@ -85,7 +99,7 @@ void OdomRobot::publishSpin() {
     odom.header.stamp = current_time;
     odom.header.frame_id = "odom";
 
-    odom.pose.pose.position.x = x;
+    odom.pose.pose.position.x = end_x;
     odom.pose.pose.position.y = 0.0;
     odom.pose.pose.position.z = 0.0;
     odom.pose.pose.orientation = odom_quat;
@@ -108,17 +122,17 @@ void OdomRobot::odomPublish() {
     double delta_x = FORWARD_SPEED * dt;
     double delta_th = SPIN_SPEED * dt;
 
-    x += delta_x;
-    th += delta_th;
+    end_x += delta_x;
+    end_th += delta_th;
 
-    geometry_msgs::Quaternion odom_quat = tf::createQuaternionMsgFromYaw(th);
+    geometry_msgs::Quaternion odom_quat = tf::createQuaternionMsgFromYaw(end_th);
 
     geometry_msgs::TransformStamped odom_trans;
     odom_trans.header.stamp = current_time;
     odom_trans.header.frame_id = "odom";
     odom_trans.child_frame_id = "base_link";
 
-    odom_trans.transform.translation.x = x;
+    odom_trans.transform.translation.x = end_x;
     odom_trans.transform.translation.y = 0.0;
     odom_trans.transform.translation.z = 0.0;
     odom_trans.transform.rotation = odom_quat;
@@ -129,7 +143,7 @@ void OdomRobot::odomPublish() {
     odom.header.stamp = current_time;
     odom.header.frame_id = "odom";
 
-    odom.pose.pose.position.x = x;
+    odom.pose.pose.position.x = end_x;
     odom.pose.pose.position.y = 0.0;
     odom.pose.pose.position.z = 0.0;
     odom.pose.pose.orientation = odom_quat;
@@ -149,7 +163,17 @@ void OdomRobot::moveForward() {
 
     geometry_msgs::Twist msg;
     msg.linear.x = FORWARD_SPEED;
-    vel_pub.publish(msg);    
+    vel_pub.publish(msg);   
+    publishForward();
+
+}
+
+void OdomRobot::stopMoving() {
+
+    geometry_msgs::Twist msg;
+    msg.linear.x = 0;
+    vel_pub.publish(msg);
+    actualSpeed = 0.0;
 
 }
 
@@ -158,17 +182,27 @@ void OdomRobot::turnRight() {
     geometry_msgs::Twist msg;
     msg.angular.z = SPIN_SPEED;
     vel_pub.publish(msg);
+    publishSpin();
+
+}
+
+void OdomRobot::print() {
+
+    ROS_INFO("Distancia recorrida -> %lf", end_x - start_x);
 
 }
 
 void OdomRobot::startMoving() {
 
     ros::Rate rate(1.0);
+
+    actualSpeed = FORWARD_SPEED;
     while(node.ok()) {
 
-        if (!stopMoving && forwardOrSpin) {
+        if (forwardOrSpin) {
             moveForward();
-        } else if (!stopMoving && !forwardOrSpin) {
+            print();
+        } else if (!forwardOrSpin) {
             turnRight();
         }
 

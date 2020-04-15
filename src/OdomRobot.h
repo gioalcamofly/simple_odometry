@@ -7,6 +7,7 @@ class OdomRobot {
         const static double FORWARD_SPEED;
         const static double SPIN_SPEED;
         const static bool LOOPS;
+        const static double MAX_FORWARD;
 
 
         OdomRobot();
@@ -21,11 +22,18 @@ class OdomRobot {
         ros::Subscriber odom_sub;
         tf::TransformBroadcaster odom_broadcaster;
 
-        double x = 0.0;
-        double y = 0.0;
-        double th = 0.0;
+        double start_x = 0.0;
+        double end_x = 0.0;
+        double start_y = 0.0;
+        double end_y = 0.0;
+        double start_th = 0.0;
+        double end_th = 0.0;
 
-        bool forwardOrSpin, stopMoving;
+        double actualSpeed;
+
+
+
+        bool forwardOrSpin;
         int loopCount;
 
         ros::Time current_time, last_time;
@@ -37,4 +45,5 @@ class OdomRobot {
         void odomPublish();
         void publishForward();
         void publishSpin();
+        void print();
 };
