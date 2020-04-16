@@ -6,8 +6,9 @@ class OdomRobot {
     public:
         const static double FORWARD_SPEED;
         const static double SPIN_SPEED;
-        const static bool LOOPS;
+        const static int LOOPS;
         const static double MAX_FORWARD;
+        const static double MAX_SPIN;
 
 
         OdomRobot();
@@ -30,7 +31,7 @@ class OdomRobot {
         double end_th = 0.0;
 
         double actualSpeed;
-
+        int actualLoops;
 
 
         bool forwardOrSpin;
@@ -40,7 +41,8 @@ class OdomRobot {
 
         void moveForward();
         void turnRight();
-        void stopMoving();
+        void stopMovingForward();
+        void stopSpinning();
         void odomCallback(const nav_msgs::Odometry::ConstPtr& odom);
         void odomPublish();
         void publishForward();

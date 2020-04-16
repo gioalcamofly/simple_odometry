@@ -2,7 +2,9 @@
 
 const double OdomRobot::FORWARD_SPEED = 0.5;
 const double OdomRobot::SPIN_SPEED = 0.5;
-const double OdomRobot::MAX_FORWARD = 10.0;
+const double OdomRobot::MAX_FORWARD = 5.0;
+const double OdomRobot::MAX_SPIN = -M_PI/2;
+const int OdomRobot::LOOPS = 2;
 
 
 OdomRobot::OdomRobot() {
@@ -16,12 +18,40 @@ OdomRobot::OdomRobot() {
 
     forwardOrSpin = true;
 
+    actualLoops = 0;
+}
+
+double getYaw(geometry_msgs::Quaternion orientation) {
+    tf::Quaternion q(
+        orientation.x,
+        orientation.y,
+        orientation.z,
+        orientation.w
+    );
+    tf::Matrix3x3 m(q);
+
+    double roll, pitch, yaw;
+    m.getRPY(roll, pitch, yaw);
+
+    return yaw;
 }
 
 void OdomRobot::odomCallback(const nav_msgs::Odometry::ConstPtr& odom) {
 
     if ((odom->pose.pose.position.x - start_x) >= MAX_FORWARD) {
-        stopMoving();
+        stopMovingForward();
+    }
+
+    double yaw = getYaw(odom->pose.pose.orientation);
+
+    if ((yaw - start_th) <= MAX_SPIN) {
+        stopSpinning();
+    }
+
+    if (forwardOrSpin) {
+        ROS_INFO("Distancia recorrida -> %lf", end_x - start_x);
+    } else {
+        ROS_INFO("Orientación = %lf", yaw);
     }
 
 }
@@ -34,9 +64,6 @@ void OdomRobot::publishForward() {
     double delta_x = actualSpeed * dt;
 
     end_x += delta_x;
-    ROS_INFO("start_x = %lf", start_x);
-    ROS_INFO("delta_x = %lf", delta_x);
-    ROS_INFO("end_x = %lf", end_x);
 
     geometry_msgs::Quaternion odom_quat = tf::createQuaternionMsgFromYaw(end_th);
 
@@ -168,40 +195,47 @@ void OdomRobot::moveForward() {
 
 }
 
-void OdomRobot::stopMoving() {
+void OdomRobot::stopMovingForward() {
 
     geometry_msgs::Twist msg;
     msg.linear.x = 0;
     vel_pub.publish(msg);
     actualSpeed = 0.0;
-
+    end_x = 0.0;
+    forwardOrSpin = false;
+    publishForward();
 }
 
 void OdomRobot::turnRight() {
 
     geometry_msgs::Twist msg;
-    msg.angular.z = SPIN_SPEED;
+    msg.angular.z = -SPIN_SPEED;
     vel_pub.publish(msg);
     publishSpin();
 
 }
 
-void OdomRobot::print() {
+void OdomRobot::stopSpinning() {
 
-    ROS_INFO("Distancia recorrida -> %lf", end_x - start_x);
+    geometry_msgs::Twist msg;
+    msg.angular.z = 0.0;
+    vel_pub.publish(msg);
+    end_th = 0.0;
+    actualLoops += 1;
+    forwardOrSpin = true;
+    publishSpin();
 
 }
 
 void OdomRobot::startMoving() {
 
-    ros::Rate rate(1.0);
+    ros::Rate rate(10.0);
 
     actualSpeed = FORWARD_SPEED;
-    while(node.ok()) {
+    while(node.ok() && actualLoops < LOOPS) {
 
         if (forwardOrSpin) {
             moveForward();
-            print();
         } else if (!forwardOrSpin) {
             turnRight();
         }
