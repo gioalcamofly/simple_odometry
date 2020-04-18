@@ -1,27 +1,105 @@
 #include "OdomRobot.h"
 
-const double OdomRobot::FORWARD_SPEED = 0.5;
-const double OdomRobot::SPIN_SPEED = 0.5;
-const double OdomRobot::MAX_FORWARD = 5.0;
-const double OdomRobot::MAX_SPIN = -M_PI/2;
-const int OdomRobot::LOOPS = 2;
+const double OdomRobot::FORWARD_SPEED = 0.2;
+const double OdomRobot::SPIN_SPEED = 0.2;
+const double OdomRobot::SQUARE_SIDE_LENGTH = 3;
+const double OdomRobot::RIGHT_ANGLE = -M_PI/2;
+const double OdomRobot::MIN_SCAN_ANGLE = 0.0/180*M_PI;
+const double OdomRobot::MAX_SCAN_ANGLE = +60.0/180*M_PI;
+const float OdomRobot::MIN_DIST_FROM_OBSTACLE = 0.5;
 
 
 OdomRobot::OdomRobot() {
 
-    vel_pub = node.advertise<geometry_msgs::Twist>("/cmd_vel", 10);
-    odom_pub = node.advertise<nav_msgs::Odometry>("odom", 50);
-    odom_sub = node.subscribe("odom", 1, &OdomRobot::odomCallback, this);
+    initializeMap();
 
-    current_time = ros::Time::now();
-    last_time = ros::Time::now();
+    velocityPublisher = node.advertise<geometry_msgs::Twist>("/cmd_vel", 10);
+    odometrySubscriber = node.subscribe("odom", 1, &OdomRobot::odomCallback, this);
+    laserScanSubscriber = node.subscribe("scan", 1, &OdomRobot::scanCallback, this);
 
-    forwardOrSpin = true;
-
-    actualLoops = 0;
 }
 
-double getYaw(geometry_msgs::Quaternion orientation) {
+void OdomRobot::initializeMap() {
+
+    for (int i = 0; i < MAP_SIZE; i++) {
+        for (int j = 0; j < MAP_SIZE; j++) {
+            map[i][j] = notVisited;
+        }
+    }
+
+    map[0][0] = actual;
+
+}
+
+void OdomRobot::odomCallback(const nav_msgs::Odometry::ConstPtr& odom){
+
+
+    int nextX, nextY;
+    createNextPosition(&nextX, &nextY);
+
+    int actualX, actualY;
+    getApproximateCoordinates(&actualX, abs(odom->pose.pose.position.x));
+    getApproximateCoordinates(&actualY, abs(odom->pose.pose.position.y));
+
+    ROS_INFO("actualX -> %d, actualY -> %d", actualX, actualY);
+
+    if (nextX == floor(odom->pose.pose.position.x) &&
+        nextY == floor(odom->pose.pose.position.y)) {
+            actualMovement = *movements[STOP_MOVEMENT];
+    }
+
+}
+
+void OdomRobot::createNextPosition(int* nextX, int* nextY) {
+
+    *nextX = actualPosition[1] + actualMovement.getNextPosition()[1];
+    *nextY = actualPosition[0] + actualMovement.getNextPosition()[0];
+
+}
+
+void OdomRobot::getApproximateCoordinates(int* actualPosition, double odomPosition) {
+
+    if (ceil(odomPosition) - odomPosition <= 0.1) {
+        *actualPosition = ceil(odomPosition);
+    } else {
+        *actualPosition = floor(odomPosition);
+    }
+
+}
+
+
+void OdomRobot::scanCallback(const sensor_msgs::LaserScan::ConstPtr& scan) {
+
+    bool isObstacleInFront = false;
+
+    int minIndex = ceil((MIN_SCAN_ANGLE - scan->angle_min) / scan->angle_increment);
+    int maxIndex = floor((MAX_SCAN_ANGLE - scan->angle_min) / scan->angle_increment);
+
+    for (int currIndex = minIndex + 1; currIndex<= maxIndex; currIndex++) {
+        if (scan->ranges[currIndex] < MIN_DIST_FROM_OBSTACLE) {
+            isObstacleInFront = actualMovement.isObstaculizable();
+            break;
+        }
+    }
+
+    if (isObstacleInFront) {
+        ROS_INFO("Stop!");
+        setNextCoordinateAsOccupied();
+    } 
+
+}
+
+void OdomRobot::setNextCoordinateAsOccupied() {
+
+    int nextX, nextY;
+    createNextPosition(&nextX, &nextY);
+
+    map[nextY][nextX] = occupied;
+
+}
+
+
+double OdomRobot::getYaw(geometry_msgs::Quaternion orientation) {
     tf::Quaternion q(
         orientation.x,
         orientation.y,
@@ -36,212 +114,26 @@ double getYaw(geometry_msgs::Quaternion orientation) {
     return yaw;
 }
 
-void OdomRobot::odomCallback(const nav_msgs::Odometry::ConstPtr& odom) {
+void OdomRobot::move() {
 
-    if ((odom->pose.pose.position.x - start_x) >= MAX_FORWARD) {
-        stopMovingForward();
-    }
-
-    double yaw = getYaw(odom->pose.pose.orientation);
-
-    if ((yaw - start_th) <= MAX_SPIN) {
-        stopSpinning();
-    }
-
-    if (forwardOrSpin) {
-        ROS_INFO("Distancia recorrida -> %lf", end_x - start_x);
-    } else {
-        ROS_INFO("Orientación = %lf", yaw);
-    }
+    velocityPublisher.publish(actualMovement.getVelocity());
 
 }
 
-void OdomRobot::publishForward() {
+void OdomRobot::start() {
 
-    current_time = ros::Time::now();
+    ros::Rate rate(1000.0);
 
-    double dt = (current_time - last_time).toSec();
-    double delta_x = actualSpeed * dt;
+    actualMovement = *movements[FORWARD_MOVEMENT];
 
-    end_x += delta_x;
+    loops = 0;
 
-    geometry_msgs::Quaternion odom_quat = tf::createQuaternionMsgFromYaw(end_th);
+    while(ros::ok()) {
 
-    geometry_msgs::TransformStamped odom_trans;
-    odom_trans.header.stamp = current_time;
-    odom_trans.header.frame_id = "odom";
-    odom_trans.child_frame_id = "base_link";
-
-    odom_trans.transform.translation.x = end_x;
-    odom_trans.transform.translation.y = 0.0;
-    odom_trans.transform.translation.z = 0.0;
-    odom_trans.transform.rotation = odom_quat;
-
-    odom_broadcaster.sendTransform(odom_trans);
-
-    nav_msgs::Odometry odom;
-    odom.header.stamp = current_time;
-    odom.header.frame_id = "odom";
-
-    odom.pose.pose.position.x = end_x;
-    odom.pose.pose.position.y = 0.0;
-    odom.pose.pose.position.z = 0.0;
-    odom.pose.pose.orientation = odom_quat;
-
-    odom.child_frame_id = "base_link";
-    odom.twist.twist.linear.x = FORWARD_SPEED;
-    odom.twist.twist.linear.y = 0.0;
-    odom.twist.twist.angular.z = 0.0;
-
-    odom_pub.publish(odom);
-
-    last_time = current_time;    
-
-}
-
-void OdomRobot::publishSpin() {
-
-    current_time = ros::Time::now();
-
-    double dt = (current_time - last_time).toSec();
-    double delta_th = SPIN_SPEED * dt;
-
-    end_th += delta_th;
-
-    geometry_msgs::Quaternion odom_quat = tf::createQuaternionMsgFromYaw(end_th);
-
-    geometry_msgs::TransformStamped odom_trans;
-    odom_trans.header.stamp = current_time;
-    odom_trans.header.frame_id = "odom";
-    odom_trans.child_frame_id = "base_link";
-
-    odom_trans.transform.translation.x = end_x;
-    odom_trans.transform.translation.y = 0.0;
-    odom_trans.transform.translation.z = 0.0;
-    odom_trans.transform.rotation = odom_quat;
-
-    odom_broadcaster.sendTransform(odom_trans);
-
-    nav_msgs::Odometry odom;
-    odom.header.stamp = current_time;
-    odom.header.frame_id = "odom";
-
-    odom.pose.pose.position.x = end_x;
-    odom.pose.pose.position.y = 0.0;
-    odom.pose.pose.position.z = 0.0;
-    odom.pose.pose.orientation = odom_quat;
-
-    odom.child_frame_id = "base_link";
-    odom.twist.twist.linear.x = 0.0;
-    odom.twist.twist.linear.y = 0.0;
-    odom.twist.twist.angular.z = SPIN_SPEED;
-
-    odom_pub.publish(odom);
-
-    last_time = current_time;
-}
-
-void OdomRobot::odomPublish() {
-
-    current_time = ros::Time::now();
-
-    double dt = (current_time - last_time).toSec();
-    double delta_x = FORWARD_SPEED * dt;
-    double delta_th = SPIN_SPEED * dt;
-
-    end_x += delta_x;
-    end_th += delta_th;
-
-    geometry_msgs::Quaternion odom_quat = tf::createQuaternionMsgFromYaw(end_th);
-
-    geometry_msgs::TransformStamped odom_trans;
-    odom_trans.header.stamp = current_time;
-    odom_trans.header.frame_id = "odom";
-    odom_trans.child_frame_id = "base_link";
-
-    odom_trans.transform.translation.x = end_x;
-    odom_trans.transform.translation.y = 0.0;
-    odom_trans.transform.translation.z = 0.0;
-    odom_trans.transform.rotation = odom_quat;
-
-    odom_broadcaster.sendTransform(odom_trans);
-
-    nav_msgs::Odometry odom;
-    odom.header.stamp = current_time;
-    odom.header.frame_id = "odom";
-
-    odom.pose.pose.position.x = end_x;
-    odom.pose.pose.position.y = 0.0;
-    odom.pose.pose.position.z = 0.0;
-    odom.pose.pose.orientation = odom_quat;
-
-    odom.child_frame_id = "base_link";
-    odom.twist.twist.linear.x = FORWARD_SPEED;
-    odom.twist.twist.linear.y = 0.0;
-    odom.twist.twist.angular.z = SPIN_SPEED;
-
-    odom_pub.publish(odom);
-
-    last_time = current_time;
-
-}
-
-void OdomRobot::moveForward() {
-
-    geometry_msgs::Twist msg;
-    msg.linear.x = FORWARD_SPEED;
-    vel_pub.publish(msg);   
-    publishForward();
-
-}
-
-void OdomRobot::stopMovingForward() {
-
-    geometry_msgs::Twist msg;
-    msg.linear.x = 0;
-    vel_pub.publish(msg);
-    actualSpeed = 0.0;
-    end_x = 0.0;
-    forwardOrSpin = false;
-    publishForward();
-}
-
-void OdomRobot::turnRight() {
-
-    geometry_msgs::Twist msg;
-    msg.angular.z = -SPIN_SPEED;
-    vel_pub.publish(msg);
-    publishSpin();
-
-}
-
-void OdomRobot::stopSpinning() {
-
-    geometry_msgs::Twist msg;
-    msg.angular.z = 0.0;
-    vel_pub.publish(msg);
-    end_th = 0.0;
-    actualLoops += 1;
-    forwardOrSpin = true;
-    publishSpin();
-
-}
-
-void OdomRobot::startMoving() {
-
-    ros::Rate rate(10.0);
-
-    actualSpeed = FORWARD_SPEED;
-    while(node.ok() && actualLoops < LOOPS) {
-
-        if (forwardOrSpin) {
-            moveForward();
-        } else if (!forwardOrSpin) {
-            turnRight();
-        }
+        move();
 
         ros::spinOnce();
         rate.sleep();
-    }
 
+    }
 }

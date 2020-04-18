@@ -25,7 +25,9 @@ catkin_package()
 include_directories(${catkin_INCLUDE_DIRS})
 
 ## Declare a cpp executable
-add_executable(OdometryRobot src/OdomRobot.cpp src/run_odometry_robot.cpp)
+add_executable(OdometryRobot src/OdomRobot.cpp src/run_odometry_robot.cpp src/BackwardMovement.cpp src/ForwardMovement.cpp
+                src/LeftMovement.cpp src/Movement.h src/RightMovement.cpp src/StopMovement.cpp src/TurningLeftMovement.cpp
+                src/TurningRightMovement.cpp)
 
 ## Specify libraries to link a library or executable target against
 target_link_libraries(OdometryRobot ${catkin_LIBRARIES})

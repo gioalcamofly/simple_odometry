@@ -6,7 +6,7 @@ int main(int argc, char **argv) {
 
     OdomRobot odomRobot;
 
-    odomRobot.startMoving();
+    odomRobot.start();
 
     return 0;
 }
