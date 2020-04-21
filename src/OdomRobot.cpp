@@ -41,11 +41,11 @@ void OdomRobot::odomCallback(const nav_msgs::Odometry::ConstPtr& odom){
     getApproximateCoordinates(&actualX, abs(odom->pose.pose.position.x));
     getApproximateCoordinates(&actualY, abs(odom->pose.pose.position.y));
 
-    ROS_INFO("actualX -> %d, actualY -> %d", actualX, actualY);
-
-    if (nextX == floor(odom->pose.pose.position.x) &&
-        nextY == floor(odom->pose.pose.position.y)) {
-            actualMovement = *movements[STOP_MOVEMENT];
+    if (nextX == actualX &&
+        nextY == actualY) {
+            map[actualPosition[1]][actualPosition[0]] = visited;
+            map[nextY][nextX] = actual;
+            actualMovement = *movements[FORWARD_MOVEMENT];
     }
 
 }
@@ -85,7 +85,9 @@ void OdomRobot::scanCallback(const sensor_msgs::LaserScan::ConstPtr& scan) {
     if (isObstacleInFront) {
         ROS_INFO("Stop!");
         setNextCoordinateAsOccupied();
+        actualMovement = *movements[STOP_MOVEMENT];
     } 
+
 
 }
 

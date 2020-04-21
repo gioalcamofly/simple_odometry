@@ -18,6 +18,8 @@ class TurningRightMovement: public Movement {
             nextPosition[0] = 0;
             nextPosition[1] = 0;
 
+            obstaculizable = false;
+
         }
 
 
@@ -30,6 +32,11 @@ class TurningRightMovement: public Movement {
             velocity.angular.x = 0.0;
             velocity.angular.y = 0.0;
             velocity.angular.z = -speed;
+
+            nextPosition[0] = 0;
+            nextPosition[1] = 0;
+
+            obstaculizable = false;
 
         }
 

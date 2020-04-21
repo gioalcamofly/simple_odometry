@@ -13,7 +13,7 @@ class Movement {
         };
 
         bool isObstaculizable() {
-            return false;
+            return obstaculizable;
         };
         
         int* getNextPosition() {
@@ -21,6 +21,8 @@ class Movement {
         }
 
     protected:
+
+        bool obstaculizable;
 
         static constexpr double SPEED = 0.5;
 

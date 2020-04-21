@@ -18,6 +18,8 @@ class StopMovement: public Movement {
             nextPosition[0] = 0;
             nextPosition[1] = 0;
 
+            obstaculizable = false;
+
         }
 
         bool isObstaculizable() {
